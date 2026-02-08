@@ -18,6 +18,8 @@ export function initializeLogger(logFile?: string, level: string = 'info'): pino
 
   const fileStream = createWriteStream(destination, { flags: 'a' });
 
+  // Use multi-stream to write to both file and stderr
+  // This ensures errors are visible in systemd logs
   loggerInstance = pino(
     {
       level,
@@ -27,7 +29,11 @@ export function initializeLogger(logFile?: string, level: string = 'info'): pino
         },
       },
     },
-    fileStream
+    pino.multistream([
+      { stream: fileStream },
+      { level: 'error', stream: process.stderr },
+      { level: 'warn', stream: process.stderr },
+    ])
   );
 
   return loggerInstance;

@@ -76,10 +76,29 @@ async function main() {
     });
 
   } catch (error) {
-    logger.error({ component: 'main', error }, 'Failed to start application');
+    // Log to both logger and console as fallback
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('Failed to start application:', errorMessage);
+    if (errorStack) {
+      console.error(errorStack);
+    }
+    try {
+      logger.error({ component: 'main', error }, 'Failed to start application');
+    } catch (logError) {
+      // If logger fails, at least we have console.error above
+    }
     await cleanupAllTunnels().catch(() => {});
     process.exit(1);
   }
 }
 
-main();
+main().catch((error) => {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
+  console.error('Unhandled error in main():', errorMessage);
+  if (errorStack) {
+    console.error(errorStack);
+  }
+  process.exit(1);
+});

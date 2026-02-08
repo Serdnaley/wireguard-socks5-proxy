@@ -5,6 +5,8 @@ import { Config } from './config';
 import { execSync } from 'child_process';
 
 const WG_DIR = '/etc/wireguard';
+const WG_BIN = '/usr/bin/wg';
+const WG_QUICK_BIN = '/usr/bin/wg-quick';
 
 export async function initializeWireGuard(config: Config): Promise<void> {
   const dataDir = config.data?.dir || './data';
@@ -28,8 +30,8 @@ export async function initializeWireGuard(config: Config): Promise<void> {
   if (!existsSync(keyPath)) {
     logger.info({ component: 'wireguard' }, 'Generating server keypair');
     try {
-      const privateKey = execSync('wg genkey', { encoding: 'utf-8' }).trim();
-      const publicKey = execSync('wg pubkey', { input: privateKey, encoding: 'utf-8' }).trim();
+      const privateKey = execSync(`${WG_BIN} genkey`, { encoding: 'utf-8' }).trim();
+      const publicKey = execSync(`${WG_BIN} pubkey`, { input: privateKey, encoding: 'utf-8' }).trim();
 
       writeFileSync(keyPath, privateKey + '\n', { mode: 0o600 });
       logger.info({ component: 'wireguard' }, 'Server keypair generated');
@@ -59,13 +61,13 @@ export async function initializeWireGuard(config: Config): Promise<void> {
 
   // Bring up WireGuard interface
   try {
-    execSync(`wg-quick down ${interfaceName}`, { stdio: 'ignore' });
+    execSync(`${WG_QUICK_BIN} down ${interfaceName}`, { stdio: 'ignore' });
   } catch (error) {
     // Interface might not exist, ignore error
   }
 
   try {
-    execSync(`wg-quick up ${interfaceName}`, { stdio: 'pipe' });
+    execSync(`${WG_QUICK_BIN} up ${interfaceName}`, { stdio: 'pipe' });
     logger.info({ component: 'wireguard', interface: interfaceName }, 'WireGuard interface brought up');
   } catch (error) {
     logger.error({ component: 'wireguard', error }, 'Failed to bring up WireGuard interface');
@@ -113,7 +115,7 @@ export async function updateWireGuardConfig(config: Config): Promise<void> {
       if (privateKeyMatch) {
         const clientPrivateKey = privateKeyMatch[1];
         try {
-          const clientPublicKey = execSync('wg pubkey', { input: clientPrivateKey, encoding: 'utf-8' }).trim();
+          const clientPublicKey = execSync(`${WG_BIN} pubkey`, { input: clientPrivateKey, encoding: 'utf-8' }).trim();
           const allowedIPsMatch = clientConfig.match(/Address\s*=\s*(\d+\.\d+\.\d+\.\d+)\/\d+/);
           const clientIP = allowedIPsMatch ? allowedIPsMatch[1] : '';
 
@@ -138,8 +140,8 @@ AllowedIPs = ${clientIP}/32
   // Copy to /etc/wireguard/ and reload
   try {
     writeFileSync(runtimeConfigPath, serverConfig, { mode: 0o600 });
-    execSync(`wg-quick down ${interfaceName}`, { stdio: 'ignore' });
-    execSync(`wg-quick up ${interfaceName}`, { stdio: 'pipe' });
+    execSync(`${WG_QUICK_BIN} down ${interfaceName}`, { stdio: 'ignore' });
+    execSync(`${WG_QUICK_BIN} up ${interfaceName}`, { stdio: 'pipe' });
     logger.info({ component: 'wireguard', interface: interfaceName }, 'WireGuard config reloaded');
   } catch (error) {
     logger.error({ component: 'wireguard', error }, 'Failed to reload WireGuard config');
@@ -149,7 +151,7 @@ AllowedIPs = ${clientIP}/32
 
 export function getWireGuardStatus(interfaceName: string): any {
   try {
-    const output = execSync(`wg show ${interfaceName}`, { encoding: 'utf-8' });
+    const output = execSync(`${WG_BIN} show ${interfaceName}`, { encoding: 'utf-8' });
     return { status: 'up', output };
   } catch (error) {
     return { status: 'down', error: String(error) };

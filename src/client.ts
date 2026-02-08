@@ -5,6 +5,8 @@ import { logger } from './logger';
 import { Config, getConfig } from './config';
 import { updateWireGuardConfig } from './wireguard';
 
+const WG_BIN = '/usr/bin/wg';
+
 export async function initializeClients(config: Config): Promise<void> {
   const dataDir = config.data?.dir || './data';
   const clientsDir = join(dataDir, 'clients');
@@ -56,15 +58,15 @@ async function initializeClient(client: { name: string; privateKey?: string; pub
   if (client.privateKey) {
     clientPrivateKey = client.privateKey;
     try {
-      clientPublicKey = execSync('wg pubkey', { input: clientPrivateKey, encoding: 'utf-8' }).trim();
+      clientPublicKey = execSync(`${WG_BIN} pubkey`, { input: clientPrivateKey, encoding: 'utf-8' }).trim();
     } catch (error) {
       logger.error({ component: 'client', client: client.name, error }, 'Failed to generate public key from provided private key');
       throw error;
     }
   } else {
     try {
-      clientPrivateKey = execSync('wg genkey', { encoding: 'utf-8' }).trim();
-      clientPublicKey = execSync('wg pubkey', { input: clientPrivateKey, encoding: 'utf-8' }).trim();
+      clientPrivateKey = execSync(`${WG_BIN} genkey`, { encoding: 'utf-8' }).trim();
+      clientPublicKey = execSync(`${WG_BIN} pubkey`, { input: clientPrivateKey, encoding: 'utf-8' }).trim();
     } catch (error) {
       logger.error({ component: 'client', client: client.name, error }, 'Failed to generate client keypair');
       throw error;
@@ -81,7 +83,7 @@ async function initializeClient(client: { name: string; privateKey?: string; pub
   }
 
   const serverPrivateKey = readFileSync(serverKeyPath, 'utf-8').trim();
-  const serverPublicKey = execSync('wg pubkey', { input: serverPrivateKey, encoding: 'utf-8' }).trim();
+  const serverPublicKey = execSync(`${WG_BIN} pubkey`, { input: serverPrivateKey, encoding: 'utf-8' }).trim();
 
   // Assign client IP (simple sequential assignment starting from .2)
   const subnetParts = config.wireguard.subnet.split('/');

@@ -80,6 +80,19 @@ fi
 
 echo -e "${GREEN}Installing ${SERVICE_NAME} systemd service...${NC}"
 
+# Enable IP forwarding (required for routing traffic through TUN interfaces)
+if [ "$(sysctl -n net.ipv4.ip_forward)" != "1" ]; then
+    echo -e "${YELLOW}Enabling IP forwarding...${NC}"
+    sysctl -w net.ipv4.ip_forward=1
+    # Make it persistent
+    if ! grep -q "net.ipv4.ip_forward" /etc/sysctl.conf; then
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    fi
+    echo -e "${GREEN}✓ IP forwarding enabled${NC}"
+else
+    echo -e "${GREEN}✓ IP forwarding already enabled${NC}"
+fi
+
 # Ensure /etc/wireguard directory exists for mount namespacing
 if [ ! -d "/etc/wireguard" ]; then
     echo -e "${YELLOW}Creating /etc/wireguard directory...${NC}"

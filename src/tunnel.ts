@@ -22,12 +22,45 @@ interface TunnelProcess {
 const activeTunnels = new Map<string, TunnelProcess>();
 
 /**
+ * Sanitize client name to create a valid Linux interface name
+ * Linux interface names:
+ * - Maximum 15 characters
+ * - Can contain: a-z, A-Z, 0-9, and some special characters (but not underscores)
+ * - Must start with a letter
+ */
+function sanitizeInterfaceName(clientName: string): string {
+  // Replace underscores and other invalid chars with valid ones
+  // Use a simple hash-like approach: convert to base36 (0-9a-z)
+  let sanitized = clientName
+    .replace(/[^a-zA-Z0-9]/g, '') // Remove all non-alphanumeric
+    .toLowerCase();
+  
+  // Ensure it starts with a letter
+  if (/^[0-9]/.test(sanitized)) {
+    sanitized = 'c' + sanitized;
+  }
+  
+  // Truncate to fit: "tun-" prefix (4 chars) + name (max 11 chars) = 15 total
+  const maxNameLength = 11;
+  if (sanitized.length > maxNameLength) {
+    // Use first part + hash of remaining to ensure uniqueness
+    const hash = clientName.split('').reduce((acc, char) => {
+      return ((acc << 5) - acc) + char.charCodeAt(0);
+    }, 0);
+    const hashStr = Math.abs(hash).toString(36).substring(0, 3);
+    sanitized = sanitized.substring(0, maxNameLength - hashStr.length) + hashStr;
+  }
+  
+  return `tun-${sanitized}`;
+}
+
+/**
  * Calculate TUN subnet for a client based on client index
  */
 function getTunSubnet(clientIndex: number): string {
-  const baseOctet = Math.floor(clientIndex / 256);
-  const subOctet = clientIndex % 256;
-  return `10.210.${baseOctet}.${subOctet}/24`;
+  // Use client index directly as the third octet to ensure unique subnets
+  // Client 0 -> 10.210.0.0/24, Client 1 -> 10.210.1.0/24, etc.
+  return `10.210.${clientIndex}.0/24`;
 }
 
 /**
@@ -68,7 +101,7 @@ export async function setupClientTunnel(clientName: string, config: Config): Pro
     throw new Error(`Client ${clientName} not found in config`);
   }
 
-  const tunInterface = `tun-${clientName}`;
+  const tunInterface = sanitizeInterfaceName(clientName);
   const tunSubnet = getTunSubnet(clientIndex);
   const routeTable = getRouteTable(clientIndex);
   const clientIP = getClientIP(clientName, config);
@@ -104,6 +137,9 @@ export async function setupClientTunnel(clientName: string, config: Config): Pro
     execSync(`ip link set dev ${tunInterface} up`, { stdio: 'pipe' });
 
     // Setup routing table
+    // Add route to TUN subnet first (required for point-to-point interfaces)
+    execSync(`ip route replace ${tunSubnet} dev ${tunInterface} table ${routeTable}`, { stdio: 'pipe' });
+    // Add default route through TUN interface
     execSync(`ip route replace default dev ${tunInterface} table ${routeTable}`, { stdio: 'pipe' });
 
     // Setup policy-based routing rule
@@ -160,7 +196,7 @@ function findTun2SocksBinary(): string | null {
  * Start TUN2SOCKS process for a client with auto-restart on failure
  */
 async function startTun2SocksProcess(clientName: string, proxyUrl: string, config: Config, isRestart: boolean = false): Promise<void> {
-  const tunInterface = `tun-${clientName}`;
+  const tunInterface = sanitizeInterfaceName(clientName);
   
   // Find TUN2SOCKS binary
   const tun2socksPath = findTun2SocksBinary();
@@ -307,7 +343,8 @@ export async function stopClientTunnel(clientName: string): Promise<void> {
 
   // Also kill any orphaned processes
   try {
-    execSync(`pkill -f "tun2socks.*tun-${clientName}"`, { stdio: 'ignore' });
+    const tunInterface = sanitizeInterfaceName(clientName);
+    execSync(`pkill -f "tun2socks.*${tunInterface}"`, { stdio: 'ignore' });
   } catch (error) {
     // Process might not exist, ignore
   }
@@ -358,7 +395,7 @@ export async function cleanupAllTunnels(): Promise<void> {
   // Cleanup TUN interfaces and routing rules
   const config = getConfig();
   for (const client of config.clients) {
-    const tunInterface = `tun-${client.name}`;
+    const tunInterface = sanitizeInterfaceName(client.name);
     const clientIndex = config.clients.findIndex(c => c.name === client.name);
     const routeTable = getRouteTable(clientIndex);
     const clientIP = getClientIP(client.name, config);

@@ -9,6 +9,7 @@ A Bun/TypeScript application that manages a WireGuard server with automatic prox
 - **Location-Based Selection**: Selects proxies from different locations, preferring freshest (least recently used) proxies
 - **Client Management**: Generates and manages WireGuard client configurations
 - **HTTP API**: RESTful API for client configs, QR codes, and manual proxy rotation
+- **Telegram Bot**: Interactive bot with menu buttons for switching client locations and receiving rotation notifications
 - **JSON Logging**: Structured JSON logging with pino
 - **File-Based Persistence**: All data stored in project directory
 
@@ -159,6 +160,42 @@ Content-Type: application/json
 }
 ```
 
+## Telegram Bot
+
+The application includes a Telegram bot for managing clients and proxy rotations.
+
+### Setup
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and get your bot token
+2. Get your Telegram user ID from [@userinfobot](https://t.me/userinfobot)
+3. Configure in `config.yaml`:
+```yaml
+telegram:
+  bot_token: YOUR_BOT_TOKEN_HERE
+  admin_user_ids:
+    - YOUR_USER_ID
+```
+
+### Commands
+
+- `/start` - Show welcome message and available commands
+- `/help` - Show help message
+- `/menu` - Open interactive menu with buttons to switch client locations
+- `/clients` - List all WireGuard clients
+- `/client <name>` - Get detailed client information including config and current proxy
+- `/qr <name>` - Generate and send QR code image for client configuration
+- `/rotate <name> [location]` - Rotate proxy for a client (optionally filter by location)
+- `/status` - Get WireGuard server status and interface information
+- `/proxies` - List all available proxies with their locations
+
+### Features
+
+- **Interactive Menu**: Use `/menu` to select a client and switch its location with buttons
+- **Location Switching**: Easily switch client locations through the menu interface
+- **Automatic Notifications**: Receive notifications when automatic proxy rotation occurs
+- **QR Codes**: Get QR codes for easy mobile client setup
+- **Status Monitoring**: Check WireGuard server status and proxy information
+
 ## Data Persistence
 
 All data is stored in the `./data/` directory:
@@ -173,10 +210,43 @@ The application copies WireGuard configs to `/etc/wireguard/` at runtime for the
 
 ## Proxy Rotation
 
-- Proxies are rotated automatically based on `rotation.interval_days`
+Proxies are rotated automatically based on a configurable interval. Configure the rotation schedule in `config.yaml`:
+
+```yaml
+rotation:
+  interval: 7                 # Rotation interval number
+  interval_type: days         # Type: seconds, minutes, hours, or days
+```
+
+**Supported interval types:**
+- `seconds` or `second` - Rotate every N seconds
+- `minutes` or `minute` - Rotate every N minutes
+- `hours` or `hour` - Rotate every N hours
+- `days` or `day` - Rotate every N days
+
+**Examples:**
+```yaml
+# Rotate every hour
+rotation:
+  interval: 3600
+  interval_type: seconds
+
+# Rotate every 30 minutes
+rotation:
+  interval: 30
+  interval_type: minutes
+
+# Rotate every 7 days (default)
+rotation:
+  interval: 7
+  interval_type: days
+```
+
+**Rotation behavior:**
 - When rotating, the system selects the freshest proxy (oldest last usage date) for each client
 - Location-based filtering avoids repeating the same location consecutively
-- Manual rotation via API endpoint supports optional location preference
+- Manual rotation via API endpoint or Telegram bot supports optional location preference
+- Automatic rotations send notifications to all configured Telegram admin users
 
 ## License
 

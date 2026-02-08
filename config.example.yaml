@@ -12,7 +12,17 @@ data:
   # Proxy state: ./data/state.json
 
 rotation:
-  interval_days: 7  # Configurable rotation interval
+  interval: 7                 # Rotation interval number
+  interval_type: days         # Type: seconds, minutes, hours, or days (singular/plural both work)
+  # Examples:
+  # interval: 3600
+  # interval_type: seconds    # Rotate every hour
+  # interval: 60
+  # interval_type: minutes     # Rotate every hour
+  # interval: 1
+  # interval_type: hours       # Rotate every hour
+  # interval: 7
+  # interval_type: days        # Rotate every 7 days (default)
 
 proxies:
   - url: socks5://user1:pass1@proxy1.example.com:1080

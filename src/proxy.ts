@@ -1,17 +1,33 @@
 import { logger } from './logger';
-import { Config, getConfig, Proxy } from './config';
+import { Config, getConfig, Proxy, getRotationIntervalMs } from './config';
 import { getClientState, initializeClientState, updateClientProxy } from './state';
 import { startTun2Socks, restartClientTunnel } from './tunnel';
+import { notifyAutomaticRotation } from './telegram';
 
 let rotationInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startRotationScheduler(config: Config): void {
-  const intervalDays = config.rotation?.interval_days || 7;
-  const checkIntervalMs = 60 * 60 * 1000; // Check every hour
+  const rotationIntervalMs = getRotationIntervalMs(config.rotation);
+  
+  // Check interval: use the smaller of 1 hour or rotation interval / 10
+  // This ensures we check frequently enough but not too often
+  const checkIntervalMs = Math.min(60 * 60 * 1000, Math.max(60000, rotationIntervalMs / 10));
 
-  logger.info({ component: 'proxy', interval_days: intervalDays }, 'Starting proxy rotation scheduler');
+  // Format interval for logging
+  let intervalDescription = '7 days (default)';
+  if (config.rotation) {
+    const { interval, interval_type } = config.rotation;
+    // Use plural form for display
+    const displayType = interval_type.endsWith('s') ? interval_type : `${interval_type}s`;
+    intervalDescription = `${interval} ${displayType}`;
+  }
 
-  // Check rotation schedule every hour
+  logger.info(
+    { component: 'proxy', rotation_interval: intervalDescription, check_interval_ms: checkIntervalMs },
+    'Starting proxy rotation scheduler'
+  );
+
+  // Check rotation schedule periodically
   rotationInterval = setInterval(async () => {
     await checkAndRotateProxies(config);
   }, checkIntervalMs);
@@ -24,8 +40,7 @@ export function startRotationScheduler(config: Config): void {
 
 async function checkAndRotateProxies(config: Config): Promise<void> {
   const clients = config.clients;
-  const intervalDays = config.rotation?.interval_days || 7;
-  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+  const intervalMs = getRotationIntervalMs(config.rotation);
 
   for (const client of clients) {
     const clientState = getClientState(client.name);
@@ -41,16 +56,32 @@ async function checkAndRotateProxies(config: Config): Promise<void> {
     const timeSinceRotation = now.getTime() - lastRotation.getTime();
 
     if (timeSinceRotation >= intervalMs) {
+      const timeSinceRotationSeconds = timeSinceRotation / 1000;
+      const timeSinceRotationMinutes = timeSinceRotationSeconds / 60;
+      const timeSinceRotationHours = timeSinceRotationMinutes / 60;
+      const timeSinceRotationDays = timeSinceRotationHours / 24;
+
       logger.info(
-        { component: 'proxy', client: client.name, days_since_rotation: timeSinceRotation / (24 * 60 * 60 * 1000) },
+        {
+          component: 'proxy',
+          client: client.name,
+          seconds_since_rotation: timeSinceRotationSeconds,
+          minutes_since_rotation: timeSinceRotationMinutes,
+          hours_since_rotation: timeSinceRotationHours,
+          days_since_rotation: timeSinceRotationDays,
+        },
         'Rotation interval reached, rotating proxy'
       );
-      await rotateProxyForClient(client.name);
+      await rotateProxyForClient(client.name, undefined, true); // true = automatic rotation
     }
   }
 }
 
-export async function rotateProxyForClient(clientName: string, preferredLocation?: string): Promise<void> {
+export async function rotateProxyForClient(
+  clientName: string, 
+  preferredLocation?: string, 
+  isAutomatic: boolean = false
+): Promise<void> {
   const config = getConfig();
   const clientState = getClientState(clientName) || await initializeClientState(clientName);
 
@@ -79,6 +110,15 @@ export async function rotateProxyForClient(clientName: string, preferredLocation
     { component: 'proxy', client: clientName, old_proxy: oldProxy, new_proxy: selectedProxy.url, location: selectedProxy.location },
     'Proxy rotated for client'
   );
+
+  // Send notification if this was an automatic rotation
+  if (isAutomatic && oldProxy) {
+    try {
+      await notifyAutomaticRotation(clientName, oldLocation, selectedProxy.location, selectedProxy.url);
+    } catch (error) {
+      logger.error({ component: 'proxy', error, client: clientName }, 'Failed to send rotation notification');
+    }
+  }
 }
 
 export async function assignProxyToClient(clientName: string, config: Config): Promise<void> {

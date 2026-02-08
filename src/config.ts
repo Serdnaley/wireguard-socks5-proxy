@@ -26,7 +26,8 @@ const DataConfigSchema = z.object({
 });
 
 const RotationConfigSchema = z.object({
-  interval_days: z.number().positive().default(7),
+  interval: z.number().positive(),
+  interval_type: z.enum(['seconds', 'second', 'minutes', 'minute', 'hours', 'hour', 'days', 'day']),
 });
 
 const LoggingConfigSchema = z.object({
@@ -63,6 +64,37 @@ export type Config = z.infer<typeof ConfigSchema>;
 export type Proxy = z.infer<typeof ProxySchema>;
 export type Client = z.infer<typeof ClientSchema>;
 export type WireGuardConfig = z.infer<typeof WireGuardConfigSchema>;
+export type RotationConfig = z.infer<typeof RotationConfigSchema>;
+
+/**
+ * Convert rotation config to milliseconds
+ */
+export function getRotationIntervalMs(rotationConfig?: RotationConfig): number {
+  if (!rotationConfig) {
+    return 7 * 24 * 60 * 60 * 1000; // Default: 7 days
+  }
+
+  const { interval, interval_type } = rotationConfig;
+  
+  // Normalize interval_type (handle both singular and plural forms)
+  const normalizedType = interval_type.toLowerCase();
+  
+  if (normalizedType === 'seconds' || normalizedType === 'second') {
+    return interval * 1000;
+  }
+  if (normalizedType === 'minutes' || normalizedType === 'minute') {
+    return interval * 60 * 1000;
+  }
+  if (normalizedType === 'hours' || normalizedType === 'hour') {
+    return interval * 60 * 60 * 1000;
+  }
+  if (normalizedType === 'days' || normalizedType === 'day') {
+    return interval * 24 * 60 * 60 * 1000;
+  }
+
+  // Fallback to default (should not reach here due to schema validation)
+  return 7 * 24 * 60 * 60 * 1000;
+}
 
 let cachedConfig: Config | null = null;
 

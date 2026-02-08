@@ -1,4 +1,4 @@
-import { Bot, Context, InputFile } from 'grammy';
+import { Bot, Context, InputFile, InlineKeyboard } from 'grammy';
 import { logger } from './logger';
 import { Config, getConfig } from './config';
 import { getAllClients, getClientConfig } from './client';
@@ -25,6 +25,9 @@ function isAuthorized(ctx: Context): ctx is AuthorizedContext {
   return config.telegram.admin_user_ids.includes(userId);
 }
 
+// Store bot instance for notifications
+let botInstance: Bot | null = null;
+
 export function createTelegramBot(config: Config): void {
   if (!config.telegram) {
     logger.warn({ component: 'telegram' }, 'Telegram config not found, skipping bot initialization');
@@ -32,6 +35,7 @@ export function createTelegramBot(config: Config): void {
   }
 
   const bot = new Bot(config.telegram.bot_token);
+  botInstance = bot;
 
   // Authorization middleware - must be first
   bot.use(async (ctx, next) => {
@@ -52,6 +56,7 @@ export function createTelegramBot(config: Config): void {
 
 Available commands:
 /help - Show this help message
+/menu - Open interactive menu to switch locations
 /clients - List all WireGuard clients
 /client <name> - Get client info and config
 /qr <name> - Get QR code for client config
@@ -62,7 +67,8 @@ Available commands:
 Example:
 /client client1
 /qr client1
-/rotate client1 US`;
+/rotate client1 US
+/menu - Use buttons to switch locations`;
 
     await ctx.reply(helpText);
     logger.info({ component: 'telegram', user_id: ctx.from?.id, command: 'start' }, 'Start command executed');
@@ -72,6 +78,7 @@ Example:
   bot.command('help', async (ctx) => {
     const helpText = `Available commands:
 
+/menu - Open interactive menu with buttons to switch client locations
 /clients - List all WireGuard clients
 /client <name> - Get detailed client information including config and current proxy
 /qr <name> - Generate and send QR code image for client configuration
@@ -80,6 +87,7 @@ Example:
 /proxies - List all available proxies with their locations
 
 Examples:
+• /menu - Use buttons to switch locations
 • /clients
 • /client client1
 • /qr client1
@@ -297,6 +305,230 @@ Examples:
     }
   });
 
+  // Menu command - shows clients as buttons
+  bot.command('menu', async (ctx) => {
+    try {
+      const clients = getAllClients();
+      
+      if (clients.length === 0) {
+        await ctx.reply('No clients configured.');
+        return;
+      }
+
+      const keyboard = new InlineKeyboard();
+      
+      // Add client buttons (2 per row)
+      for (let i = 0; i < clients.length; i += 2) {
+        keyboard.text(clients[i], `client:${clients[i]}`);
+        if (i + 1 < clients.length) {
+          keyboard.text(clients[i + 1], `client:${clients[i + 1]}`);
+        }
+        if (i + 2 < clients.length) {
+          keyboard.row();
+        }
+      }
+
+      await ctx.reply('Select a client to switch location:', {
+        reply_markup: keyboard,
+      });
+      
+      logger.info({ component: 'telegram', user_id: ctx.from?.id, command: 'menu' }, 'Menu sent');
+    } catch (error) {
+      logger.error({ component: 'telegram', error, user_id: ctx.from?.id }, 'Error showing menu');
+      await ctx.reply('Error showing menu.');
+    }
+  });
+
+  // Callback query handler for client selection
+  bot.callbackQuery(/^client:(.+)$/, async (ctx) => {
+    try {
+      const clientName = ctx.match[1];
+      
+      // Verify client exists
+      const clientConfig = getClientConfig(clientName);
+      if (!clientConfig) {
+        await ctx.answerCallbackQuery({ text: `Client "${clientName}" not found.`, show_alert: true });
+        return;
+      }
+
+      const config = getConfig();
+      const currentProxy = getCurrentProxy(clientName);
+      
+      // Get unique locations from proxies
+      const locations = [...new Set(config.proxies.map(p => p.location))];
+      
+      if (locations.length === 0) {
+        await ctx.answerCallbackQuery({ text: 'No locations available.', show_alert: true });
+        return;
+      }
+
+      // Build location selection keyboard
+      const keyboard = new InlineKeyboard();
+      
+      // Add location buttons (2 per row)
+      for (let i = 0; i < locations.length; i += 2) {
+        const location1 = locations[i];
+        const isCurrent1 = currentProxy?.location === location1;
+        keyboard.text(
+          `${isCurrent1 ? '✓ ' : ''}${location1}`, 
+          `switch:${clientName}:${location1}`
+        );
+        
+        if (i + 1 < locations.length) {
+          const location2 = locations[i + 1];
+          const isCurrent2 = currentProxy?.location === location2;
+          keyboard.text(
+            `${isCurrent2 ? '✓ ' : ''}${location2}`, 
+            `switch:${clientName}:${location2}`
+          );
+        }
+        if (i + 2 < locations.length) {
+          keyboard.row();
+        }
+      }
+      
+      // Add back button on new row
+      keyboard.row();
+      keyboard.text('← Back to Clients', 'menu:back');
+
+      let message = `*Client: ${clientName}*\n\n`;
+      if (currentProxy) {
+        message += `*Current Location:* ${currentProxy.location}\n`;
+        message += `*Current Proxy:* \`${currentProxy.url}\`\n\n`;
+      } else {
+        message += `*Current Location:* Not assigned\n\n`;
+      }
+      message += `Select a location to switch to:`;
+
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+      
+      await ctx.answerCallbackQuery();
+      logger.info({ component: 'telegram', user_id: ctx.from?.id, client: clientName }, 'Location selection menu shown');
+    } catch (error) {
+      logger.error({ component: 'telegram', error, user_id: ctx.from?.id }, 'Error showing location selection');
+      await ctx.answerCallbackQuery({ text: 'Error showing locations.', show_alert: true });
+    }
+  });
+
+  // Callback query handler for location switching
+  bot.callbackQuery(/^switch:(.+):(.+)$/, async (ctx) => {
+    try {
+      const clientName = ctx.match[1];
+      const location = ctx.match[2];
+      
+      // Verify client exists
+      const clientConfig = getClientConfig(clientName);
+      if (!clientConfig) {
+        await ctx.answerCallbackQuery({ text: `Client "${clientName}" not found.`, show_alert: true });
+        return;
+      }
+
+      // Show loading message
+      await ctx.answerCallbackQuery({ text: `Switching to ${location}...` });
+
+      // Rotate proxy to selected location
+      await rotateProxyForClient(clientName, location);
+      
+      const currentProxy = getCurrentProxy(clientName);
+      
+      if (currentProxy && currentProxy.location === location) {
+        // Update the message with success
+        const config = getConfig();
+        const locations = [...new Set(config.proxies.map(p => p.location))];
+        const keyboard = new InlineKeyboard();
+        
+        // Rebuild location buttons with updated current location
+        for (let i = 0; i < locations.length; i += 2) {
+          const location1 = locations[i];
+          const isCurrent1 = currentProxy.location === location1;
+          keyboard.text(
+            `${isCurrent1 ? '✓ ' : ''}${location1}`, 
+            `switch:${clientName}:${location1}`
+          );
+          
+          if (i + 1 < locations.length) {
+            const location2 = locations[i + 1];
+            const isCurrent2 = currentProxy.location === location2;
+            keyboard.text(
+              `${isCurrent2 ? '✓ ' : ''}${location2}`, 
+              `switch:${clientName}:${location2}`
+            );
+          }
+          if (i + 2 < locations.length) {
+            keyboard.row();
+          }
+        }
+        
+        // Add back button on new row
+        keyboard.row();
+        keyboard.text('← Back to Clients', 'menu:back');
+
+        let message = `*Client: ${clientName}*\n\n`;
+        message += `✅ *Location switched successfully!*\n\n`;
+        message += `*Current Location:* ${currentProxy.location}\n`;
+        message += `*Current Proxy:* \`${currentProxy.url}\`\n\n`;
+        message += `Select a location to switch to:`;
+
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard,
+        });
+
+        logger.info(
+          { component: 'telegram', user_id: ctx.from?.id, client: clientName, location },
+          'Location switched via menu'
+        );
+      } else {
+        await ctx.answerCallbackQuery({ 
+          text: `Switched to ${location}, but proxy assignment may have failed.`, 
+          show_alert: true 
+        });
+      }
+    } catch (error) {
+      logger.error({ component: 'telegram', error, user_id: ctx.from?.id }, 'Error switching location');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await ctx.answerCallbackQuery({ text: `Error: ${errorMessage}`, show_alert: true });
+    }
+  });
+
+  // Callback query handler for back button
+  bot.callbackQuery('menu:back', async (ctx) => {
+    try {
+      const clients = getAllClients();
+      
+      if (clients.length === 0) {
+        await ctx.answerCallbackQuery({ text: 'No clients configured.', show_alert: true });
+        return;
+      }
+
+      const keyboard = new InlineKeyboard();
+      
+      // Add client buttons (2 per row)
+      for (let i = 0; i < clients.length; i += 2) {
+        keyboard.text(clients[i], `client:${clients[i]}`);
+        if (i + 1 < clients.length) {
+          keyboard.text(clients[i + 1], `client:${clients[i + 1]}`);
+        }
+        if (i + 2 < clients.length) {
+          keyboard.row();
+        }
+      }
+
+      await ctx.editMessageText('Select a client to switch location:', {
+        reply_markup: keyboard,
+      });
+      
+      await ctx.answerCallbackQuery();
+      logger.info({ component: 'telegram', user_id: ctx.from?.id }, 'Returned to main menu');
+    } catch (error) {
+      logger.error({ component: 'telegram', error, user_id: ctx.from?.id }, 'Error returning to menu');
+      await ctx.answerCallbackQuery({ text: 'Error returning to menu.', show_alert: true });
+    }
+  });
+
   // Error handler
   bot.catch((err) => {
     logger.error({ component: 'telegram', error: err.error }, 'Telegram bot error');
@@ -308,4 +540,46 @@ Examples:
   }).catch((error) => {
     logger.error({ component: 'telegram', error }, 'Failed to start Telegram bot');
   });
+}
+
+/**
+ * Send notification to all admin users about automatic proxy rotation
+ */
+export async function notifyAutomaticRotation(
+  clientName: string,
+  oldLocation: string,
+  newLocation: string,
+  newProxyUrl: string
+): Promise<void> {
+  if (!botInstance) {
+    // Bot not initialized, skip notification
+    return;
+  }
+
+  const config = getConfig();
+  if (!config.telegram) {
+    return;
+  }
+
+  const message = `🔄 *Automatic Proxy Rotation*\n\n` +
+    `*Client:* ${clientName}\n` +
+    `*Old Location:* ${oldLocation || 'None'}\n` +
+    `*New Location:* ${newLocation}\n` +
+    `*New Proxy:* \`${newProxyUrl}\`\n\n` +
+    `Rotation completed automatically.`;
+
+  // Send notification to all admin users
+  const promises = config.telegram.admin_user_ids.map(async (userId) => {
+    try {
+      await botInstance!.api.sendMessage(userId, message, { parse_mode: 'Markdown' });
+      logger.debug({ component: 'telegram', user_id: userId, client: clientName }, 'Rotation notification sent');
+    } catch (error) {
+      logger.error(
+        { component: 'telegram', error, user_id: userId, client: clientName },
+        'Failed to send rotation notification'
+      );
+    }
+  });
+
+  await Promise.allSettled(promises);
 }

@@ -1,0 +1,33 @@
+{
+  "name": "wireguard-socks5-proxy",
+  "version": "1.0.0",
+  "description": "WireGuard SOCKS5 proxy - Bun/TypeScript application",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "wireguard",
+    "proxy",
+    "rotator",
+    "vpn"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.6.11",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/qrcode": "^1.5.5",
+    "bun-types": "latest",
+    "typescript": "^5.7.2"
+  }
+}

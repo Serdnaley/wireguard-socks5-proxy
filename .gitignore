@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build output
+dist/
+*.log
+
+# Data directory
+data/
+!data/.gitkeep
+
+# Config files (may contain secrets)
+config.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Old Python/React code (to be removed)
+# app/
+# frontend/
+# alembic/

@@ -1,0 +1,42 @@
+wireguard:
+  interface: wg0
+  subnet: 10.50.0.0/24
+  listen_port: 51820
+  server_ip: 10.50.0.1
+
+data:
+  dir: ./data  # Project data directory (all files stored here)
+  # Client configs: ./data/clients/{name}.conf
+  # Server config: ./data/wireguard/{interface}.conf
+  # Server keys: ./data/wireguard/{interface}.key
+  # Proxy state: ./data/state.json
+
+rotation:
+  interval_days: 7  # Configurable rotation interval
+
+proxies:
+  - url: socks5://user1:pass1@proxy1.example.com:1080
+    location: US  # Location identifier (required)
+  - url: socks5://user2:pass2@proxy2.example.com:1080
+    location: UK
+  - url: socks5://user3:pass3@proxy3.example.com:1080
+    location: DE
+  - url: socks5://user4:pass4@proxy4.example.com:1080
+    location: US  # Multiple proxies can have same location
+
+logging:
+  level: info  # trace, debug, info, warn, error
+  file: ./data/logs/app.log  # Stored in project directory
+  # Optional: max_size_mb, max_backups, max_age_days for rotation
+
+http:
+  port: 8000
+  host: 0.0.0.0
+
+clients:
+  - name: client1  # Unique name required, saved as ./data/clients/client1.conf
+    # Keys can be pre-generated or auto-generated
+    # privateKey: <base64_private_key>  # Optional
+    # publicKey: <base64_public_key>    # Optional
+  - name: client2  # Saved as ./data/clients/client2.conf
+  - name: client3  # Saved as ./data/clients/client3.conf

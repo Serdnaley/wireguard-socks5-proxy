@@ -42,7 +42,59 @@ fi
 
 echo -e "${GREEN}Using Bun at: ${BUN_PATH}${NC}"
 
+# Check if WireGuard tools are installed
+if ! command -v wg &> /dev/null || ! command -v wg-quick &> /dev/null; then
+    echo -e "${YELLOW}WireGuard tools (wg, wg-quick) not found. Attempting to install...${NC}"
+    
+    # Detect package manager and install WireGuard
+    if command -v apt-get &> /dev/null; then
+        apt-get update
+        apt-get install -y wireguard wireguard-tools
+        echo -e "${GREEN}✓ WireGuard tools installed${NC}"
+    elif command -v yum &> /dev/null; then
+        yum install -y wireguard-tools
+        echo -e "${GREEN}✓ WireGuard tools installed${NC}"
+    elif command -v dnf &> /dev/null; then
+        dnf install -y wireguard-tools
+        echo -e "${GREEN}✓ WireGuard tools installed${NC}"
+    elif command -v pacman &> /dev/null; then
+        pacman -S --noconfirm wireguard-tools
+        echo -e "${GREEN}✓ WireGuard tools installed${NC}"
+    else
+        echo -e "${RED}Could not detect package manager. Please install WireGuard tools manually.${NC}"
+        echo "For Ubuntu/Debian: sudo apt-get install wireguard wireguard-tools"
+        echo "For CentOS/RHEL: sudo yum install wireguard-tools"
+        echo "For Fedora: sudo dnf install wireguard-tools"
+        echo "For Arch: sudo pacman -S wireguard-tools"
+        exit 1
+    fi
+    
+    # Verify installation
+    if ! command -v wg &> /dev/null || ! command -v wg-quick &> /dev/null; then
+        echo -e "${RED}WireGuard tools installation failed. Please install manually.${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✓ WireGuard tools found${NC}"
+fi
+
 echo -e "${GREEN}Installing ${SERVICE_NAME} systemd service...${NC}"
+
+# Ensure /etc/wireguard directory exists for mount namespacing
+if [ ! -d "/etc/wireguard" ]; then
+    echo -e "${YELLOW}Creating /etc/wireguard directory...${NC}"
+    mkdir -p /etc/wireguard
+    chmod 755 /etc/wireguard
+    echo -e "${GREEN}✓ /etc/wireguard directory created${NC}"
+fi
+
+# Ensure data directory exists for mount namespacing
+if [ ! -d "${APP_DIR}/data" ]; then
+    echo -e "${YELLOW}Creating data directory...${NC}"
+    mkdir -p "${APP_DIR}/data"
+    chmod 755 "${APP_DIR}/data"
+    echo -e "${GREEN}✓ Data directory created${NC}"
+fi
 
 # Create systemd service file
 cat > "$SERVICE_FILE" << EOF

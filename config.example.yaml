@@ -30,8 +30,15 @@ logging:
   # Optional: max_size_mb, max_backups, max_age_days for rotation
 
 http:
+  enabled: false  # Set to true to enable HTTP server (WARNING: it's unsafe with disabled firewall)
   port: 8000
   host: 0.0.0.0
+
+telegram:
+  bot_token: YOUR_BOT_TOKEN_HERE  # Get from @BotFather
+  admin_user_ids:
+    - 123456789  # Your Telegram user ID (get from @userinfobot)
+    # Add more admin IDs as needed
 
 clients:
   - name: client1  # Unique name required, saved as ./data/clients/client1.conf

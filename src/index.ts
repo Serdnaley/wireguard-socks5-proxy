@@ -6,6 +6,7 @@ import { initializeWireGuard } from './wireguard';
 import { initializeClients } from './client';
 import { startRotationScheduler } from './proxy';
 import { createHttpServer } from './http';
+import { createTelegramBot } from './telegram';
 
 async function main() {
   try {
@@ -32,10 +33,27 @@ async function main() {
     startRotationScheduler(config);
     logger.info({ component: 'main' }, 'Proxy rotation scheduler started');
 
-    // Start HTTP server
-    const port = config.http?.port || 8000;
-    createHttpServer(config, port);
-    logger.info({ component: 'main', port }, 'HTTP server started');
+    // Start HTTP server (if enabled)
+    if (config.http?.enabled === true) {
+      const port = config.http.port || 8000;
+      createHttpServer(config, port);
+      logger.info({ component: 'main', port }, 'HTTP server started');
+    } else {
+      logger.info({ component: 'main' }, 'HTTP server disabled in config');
+    }
+
+    // Start Telegram bot (if configured)
+    if (config.telegram) {
+      createTelegramBot(config);
+      logger.info({ component: 'main' }, 'Telegram bot initialized');
+    } else {
+      logger.info({ component: 'main' }, 'Telegram bot not configured');
+    }
+
+    // Warn if neither interface is enabled
+    if (config.http?.enabled !== true && !config.telegram) {
+      logger.warn({ component: 'main' }, 'Neither HTTP server nor Telegram bot is enabled. The application has no interface.');
+    }
 
   } catch (error) {
     logger.error({ component: 'main', error }, 'Failed to start application');

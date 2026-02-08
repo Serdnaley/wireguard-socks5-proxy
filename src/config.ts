@@ -38,8 +38,14 @@ const LoggingConfigSchema = z.object({
 });
 
 const HttpConfigSchema = z.object({
+  enabled: z.boolean().default(false),
   port: z.number().int().min(1).max(65535).default(8000),
   host: z.string().default('0.0.0.0'),
+});
+
+const TelegramConfigSchema = z.object({
+  bot_token: z.string().min(1, 'Bot token is required'),
+  admin_user_ids: z.array(z.number().int().positive()).min(1, 'At least one admin user ID is required'),
 });
 
 const ConfigSchema = z.object({
@@ -49,6 +55,7 @@ const ConfigSchema = z.object({
   proxies: z.array(ProxySchema).min(1, 'At least one proxy is required'),
   logging: LoggingConfigSchema.optional(),
   http: HttpConfigSchema.optional(),
+  telegram: TelegramConfigSchema.optional(),
   clients: z.array(ClientSchema).min(1, 'At least one client is required'),
 });
 

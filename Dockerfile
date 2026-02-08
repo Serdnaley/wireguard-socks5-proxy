@@ -1,13 +1,23 @@
 FROM oven/bun:1 AS base
 WORKDIR /app
 
-# Install system dependencies for WireGuard
+# Install system dependencies for WireGuard and TUN2SOCKS
 RUN apt-get update && apt-get install -y \
     wireguard \
     wireguard-tools \
     iptables \
     iproute2 \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install TUN2SOCKS (xjasonlyu/tun2socks)
+RUN mkdir -p /tmp/t2s && cd /tmp/t2s \
+    && curl -fsSL -o tun2socks.zip \
+       https://github.com/xjasonlyu/tun2socks/releases/download/v2.6.0/tun2socks-linux-amd64.zip \
+    && unzip tun2socks.zip \
+    && install -m 0755 tun2socks-linux-amd64 /usr/local/bin/tun2socks \
+    && cd / && rm -rf /tmp/t2s
 
 # Copy package files
 COPY package.json bun.lockb* ./
@@ -32,7 +42,17 @@ RUN apt-get update && apt-get install -y \
     wireguard-tools \
     iptables \
     iproute2 \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install TUN2SOCKS (xjasonlyu/tun2socks)
+RUN mkdir -p /tmp/t2s && cd /tmp/t2s \
+    && curl -fsSL -o tun2socks.zip \
+       https://github.com/xjasonlyu/tun2socks/releases/download/v2.6.0/tun2socks-linux-amd64.zip \
+    && unzip tun2socks.zip \
+    && install -m 0755 tun2socks-linux-amd64 /usr/local/bin/tun2socks \
+    && cd / && rm -rf /tmp/t2s
 
 # Copy built application and dependencies
 COPY --from=base /app/dist ./dist

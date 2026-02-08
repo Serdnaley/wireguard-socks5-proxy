@@ -1,6 +1,7 @@
 import { logger } from './logger';
 import { Config, getConfig, Proxy } from './config';
 import { getClientState, initializeClientState, updateClientProxy } from './state';
+import { startTun2Socks, restartClientTunnel } from './tunnel';
 
 let rotationInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -67,7 +68,13 @@ export async function rotateProxyForClient(clientName: string, preferredLocation
   // Update state
   await updateClientProxy(clientName, selectedProxy.url, selectedProxy.location, oldProxy, oldLocation);
 
-  // Restart TUN2SOCKS if needed (implementation depends on your setup)
+  // Restart TUN2SOCKS with new proxy
+  if (oldProxy) {
+    await restartClientTunnel(clientName, selectedProxy.url, config);
+  } else {
+    await startTun2Socks(clientName, selectedProxy.url, config);
+  }
+
   logger.info(
     { component: 'proxy', client: clientName, old_proxy: oldProxy, new_proxy: selectedProxy.url, location: selectedProxy.location },
     'Proxy rotated for client'
@@ -84,9 +91,12 @@ export async function assignProxyToClient(clientName: string, config: Config): P
 
   await updateClientProxy(clientName, selectedProxy.url, selectedProxy.location);
 
+  // Start TUN2SOCKS tunnel for this client
+  await startTun2Socks(clientName, selectedProxy.url, config);
+
   logger.info(
     { component: 'proxy', client: clientName, proxy: selectedProxy.url, location: selectedProxy.location },
-    'Proxy assigned to client'
+    'Proxy assigned to client and tunnel started'
   );
 }
 

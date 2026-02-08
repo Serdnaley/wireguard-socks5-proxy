@@ -4,7 +4,8 @@ import { logger, initializeLogger } from './logger';
 import { loadConfig } from './config';
 import { initializeWireGuard } from './wireguard';
 import { initializeClients } from './client';
-import { startRotationScheduler } from './proxy';
+import { startRotationScheduler, assignProxyToClient } from './proxy';
+import { cleanupAllTunnels } from './tunnel';
 import { createHttpServer } from './http';
 import { createTelegramBot } from './telegram';
 
@@ -28,6 +29,12 @@ async function main() {
     // Initialize clients
     await initializeClients(config);
     logger.info({ component: 'main' }, 'Clients initialized');
+
+    // Assign proxies to clients and start tunnels
+    for (const client of config.clients) {
+      await assignProxyToClient(client.name, config);
+    }
+    logger.info({ component: 'main' }, 'Proxies assigned and tunnels started');
 
     // Start proxy rotation scheduler
     startRotationScheduler(config);
@@ -55,8 +62,22 @@ async function main() {
       logger.warn({ component: 'main' }, 'Neither HTTP server nor Telegram bot is enabled. The application has no interface.');
     }
 
+    // Setup shutdown handlers
+    process.on('SIGTERM', async () => {
+      logger.info({ component: 'main' }, 'Received SIGTERM, shutting down gracefully');
+      await cleanupAllTunnels();
+      process.exit(0);
+    });
+
+    process.on('SIGINT', async () => {
+      logger.info({ component: 'main' }, 'Received SIGINT, shutting down gracefully');
+      await cleanupAllTunnels();
+      process.exit(0);
+    });
+
   } catch (error) {
     logger.error({ component: 'main', error }, 'Failed to start application');
+    await cleanupAllTunnels().catch(() => {});
     process.exit(1);
   }
 }
